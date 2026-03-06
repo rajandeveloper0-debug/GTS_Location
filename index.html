@@ -1,1 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>QR Attendance Logger</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 24px;
+      padding: 36px 28px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.4);
+      text-align: center;
+    }
+
+    .logo {
+      width: 72px;
+      height: 72px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      border-radius: 18px;
+      margin: 0 auto 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 28px;
+    }
+
+    .info-row {
+      display: flex;
+      align-items: center;
+      background: #f8f9ff;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      text-align: left;
+      gap: 12px;
+    }
+
+    .info-icon { font-size: 20px; flex-shrink: 0; }
+
+    .info-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .info-value {
+      font-size: 14px;
+      font-weight: 500;
+      color: #1a1a2e;
+      margin-top: 2px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      margin-top: 4px;
+    }
+
+    .status-pending { background: #fff3cd; color: #856404; }
+    .status-success { background: #d1fae5; color: #065f46; }
+    .status-error   { background: #fee2e2; color: #991b1b; }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse 1.2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 20px;
+      transition: all 0.2s;
+      letter-spacing: 0.3px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      box-shadow: 0 8px 20px rgba(102,126,234,0.4);
+    }
+
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(102,126,234,0.5); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important; }
+
+    .result-box {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 500;
+      display: none;
+    }
+
+    .result-box.success { background: #d1fae5; color: #065f46; display: block; }
+    .result-box.error   { background: #fee2e2; color: #991b1b; display: block; }
+
+    .qr-id-badge {
+      background: linear-gradient(135deg, #667eea22, #764ba222);
+      border: 1.5px solid #667eea44;
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #4c3d8f;
+      margin-bottom: 20px;
+      display: inline-block;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2.5px solid #ffffff55;
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer {
+      margin-top: 24px;
+      font-size: 11px;
+      color: #bbb;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">📍</div>
+  <h1>QR Attendance Check-In</h1>
+  <p class="subtitle">Your scan is being recorded automatically</p>
+
+  <div id="qrIdBadge" class="qr-id-badge">🔗 QR ID: <span id="qrIdText">Loading...</span></div>
+
+  <div class="info-row">
+    <span class="info-icon">🕐</span>
+    <div>
+      <div class="info-label">Timestamp</div>
+      <div class="info-value" id="timestampVal">—</div>
+    </div>
+  </div>
+
+  <div class="info-row">
+    <span class="info-icon">📡</span>
+    <div>
+      <div class="info-label">Location</div>
+      <div class="info-value" id="locationVal">
+        <span class="status-badge status-pending"><span class="dot"></span> Requesting GPS…</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-row">
+    <span class="info-icon">📱</span>
+    <div>
+      <div class="info-label">Device</div>
+      <div class="info-value" id="deviceVal">—</div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="submitBtn" disabled onclick="submitData()">
+    ⏳ Waiting for GPS…
+  </button>
+
+  <div class="result-box" id="resultBox"></div>
+
+  <footer>Powered by Google Sheets + Apps Script</footer>
+</div>
+
+<script>
+  // ─── CONFIG ──────────────────────────────────────────────────────────────
+  // 🔴 REPLACE THIS with your deployed Google Apps Script Web App URL
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwz4_ixV-zUh94aOR6G4I0S2Q5W61oYkreef2QMcnjfcOYEQQQvYPU6xOzCrCVNDdmwfg/exec";
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const params  = new URLSearchParams(window.location.search);
+  const qrId    = params.get("id") || "UNKNOWN";
+  let   lat     = null, lng = null;
+
+  // Display QR ID
+  document.getElementById("qrIdText").textContent = qrId;
+
+  // Timestamp
+  const now = new Date();
+  document.getElementById("timestampVal").textContent =
+    now.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "medium" });
+
+  // Device info
+  document.getElementById("deviceVal").textContent =
+    navigator.userAgent.substring(0, 60) + "…";
+
+  // Request GPS
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        lat = pos.coords.latitude.toFixed(6);
+        lng = pos.coords.longitude.toFixed(6);
+        document.getElementById("locationVal").innerHTML =
+          `<span class="status-badge status-success">✅ ${lat}, ${lng}</span>`;
+        enableSubmit();
+      },
+      err => {
+        console.warn("GPS error:", err.message);
+        document.getElementById("locationVal").innerHTML =
+          `<span class="status-badge status-error">⚠️ Location denied — will log without GPS</span>`;
+        lat = "DENIED"; lng = "DENIED";
+        enableSubmit();
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  } else {
+    document.getElementById("locationVal").innerHTML =
+      `<span class="status-badge status-error">⚠️ GPS not supported</span>`;
+    lat = "N/A"; lng = "N/A";
+    enableSubmit();
+  }
+
+  function enableSubmit() {
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = false;
+    btn.textContent = "✅ Submit Attendance";
+  }
+
+  function submitData() {
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Logging…';
+
+    const payload = {
+      qrId:      qrId,
+      timestamp: now.toISOString(),
+      lat:       lat,
+      lng:       lng,
+      device:    navigator.userAgent
+    };
+
+    // Use fetch (no-cors avoids preflight; Apps Script handles the response via redirect)
+    fetch(APPS_SCRIPT_URL, {
+      method:  "POST",
+      mode:    "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload)
+    })
+    .then(() => {
+      showResult("success",
+        "✅ Attendance logged successfully!\nQR ID: " + qrId +
+        "\nTime: " + now.toLocaleString());
+      btn.textContent = "✅ Logged!";
+    })
+    .catch(err => {
+      showResult("error", "❌ Network error: " + err.message +
+        "\nPlease check your connection and try again.");
+      btn.disabled = false;
+      btn.textContent = "🔄 Retry";
+    });
+  }
+
+  function showResult(type, msg) {
+    const box = document.getElementById("resultBox");
+    box.className = "result-box " + type;
+    box.textContent = msg;
+  }
+</script>
+</body>
+</html>
