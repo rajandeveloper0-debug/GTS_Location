@@ -122,7 +122,7 @@
   // ══════════════════════════════════════════════════════════════
   //  🔴 Replace with your Google Apps Script Web App URL
   // ══════════════════════════════════════════════════════════════
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby_aLRFLXy3k3WlayXt_12b3aMLYDM1FKq0iaMYnWOHV6Pxvd_qtwG5Ls86S4Iru4c5kg/exec";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzf5KzOePgf3OvsdacbyPQlZFOlpTygO6hVT-r7LsnzG-wuTTuwNiOfo5Nuv2N65v3RCQ/exec";
   // ══════════════════════════════════════════════════════════════
 
   const params = new URLSearchParams(window.location.search);
@@ -182,46 +182,101 @@
 
     const btn = document.getElementById("submitBtn");
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Checking & logging…';
+    btn.innerHTML = '<span class="spinner"></span>Checking for duplicate…';
 
-    const form = document.createElement("form");
-    form.method  = "POST";
-    form.action  = APPS_SCRIPT_URL;
-    form.target  = "hiddenFrame";
-    form.style.display = "none";
+    // ── Step 1: Check duplicate FIRST via GET (readable, no CORS issue) ──
+    const checkURL = APPS_SCRIPT_URL
+      + "?action=check"
+      + "&name=" + encodeURIComponent(name)
+      + "&qrId=" + encodeURIComponent(qrId);
 
-    const fields = {
-      qrId:      qrId,
-      name:      name,
-      timestamp: now.toISOString(),
-      lat:       lat,
-      lng:       lng,
-      device:    navigator.userAgent
-    };
+    fetch(checkURL)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
 
-    Object.entries(fields).forEach(([key, val]) => {
-      const input = document.createElement("input");
-      input.type = "hidden"; input.name = key; input.value = val;
-      form.appendChild(input);
-    });
+        if (data.status === "duplicate") {
+          // Block the submission — show warning
+          btn.disabled = false;
+          btn.textContent = "✅ Submit Attendance";
+          showResult("warning",
+            "⚠️ Duplicate scan blocked!\n\n" +
+            "👤 " + name + " already checked in at this location within the last hour.\n\n" +
+            "🕐 Previous scan: " + data.lastScan + "\n" +
+            "⏳ Try again after: " + data.nextAllowed
+          );
+          return;
+        }
 
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
+        // ── Step 2: Not a duplicate — submit the form ──
+        btn.innerHTML = '<span class="spinner"></span>Logging to Google Sheets…';
 
-    // Apps Script uses cross-origin redirects so the iframe response can
-    // never be read by the browser. The data is already saved to the Sheet
-    // the moment form.submit() fires. We confirm after 2 seconds.
-    setTimeout(function() {
-      btn.textContent = "✅ Logged!";
-      showResult("success",
-        "✅ Attendance logged successfully!\n\n" +
-        "👤 Name: " + name + "\n" +
-        "📌 QR ID: " + qrId + "\n" +
-        "🕐 Time: " + now.toLocaleString() + "\n" +
-        "📍 Location: " + (lat === "DENIED" || lat === "N/A" ? "Not available" : lat + ", " + lng)
-      );
-    }, 2000);
+        const form = document.createElement("form");
+        form.method  = "POST";
+        form.action  = APPS_SCRIPT_URL;
+        form.target  = "hiddenFrame";
+        form.style.display = "none";
+
+        const fields = {
+          qrId:      qrId,
+          name:      name,
+          timestamp: now.toISOString(),
+          lat:       lat,
+          lng:       lng,
+          device:    navigator.userAgent
+        };
+
+        Object.entries(fields).forEach(function(entry) {
+          const input = document.createElement("input");
+          input.type = "hidden"; input.name = entry[0]; input.value = entry[1];
+          form.appendChild(input);
+        });
+
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+
+        // Confirm after 2s (form is cross-origin, response unreadable)
+        setTimeout(function() {
+          btn.textContent = "✅ Logged!";
+          showResult("success",
+            "✅ Attendance logged successfully!\n\n" +
+            "👤 Name: " + name + "\n" +
+            "📌 QR ID: " + qrId + "\n" +
+            "🕐 Time: " + now.toLocaleString() + "\n" +
+            "📍 Location: " + (lat === "DENIED" || lat === "N/A" ? "Not available" : lat + ", " + lng)
+          );
+        }, 2000);
+
+      })
+      .catch(function(err) {
+        // If duplicate check fails (network issue), allow submission anyway
+        console.warn("Duplicate check failed:", err);
+        btn.innerHTML = '<span class="spinner"></span>Logging…';
+
+        const form = document.createElement("form");
+        form.method = "POST"; form.action = APPS_SCRIPT_URL;
+        form.target = "hiddenFrame"; form.style.display = "none";
+        ["qrId","name","timestamp","lat","lng","device"].forEach(function(k) {
+          const vals = { qrId: qrId, name: name, timestamp: now.toISOString(), lat: lat, lng: lng, device: navigator.userAgent };
+          const i = document.createElement("input");
+          i.type = "hidden"; i.name = k; i.value = vals[k];
+          form.appendChild(i);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+
+        setTimeout(function() {
+          btn.textContent = "✅ Logged!";
+          showResult("success",
+            "✅ Attendance logged successfully!\n\n" +
+            "👤 Name: " + name + "\n" +
+            "📌 QR ID: " + qrId + "\n" +
+            "🕐 Time: " + now.toLocaleString() + "\n" +
+            "📍 Location: " + (lat === "DENIED" || lat === "N/A" ? "Not available" : lat + ", " + lng)
+          );
+        }, 2000);
+      });
   }
 
   function showResult(type, msg) {
