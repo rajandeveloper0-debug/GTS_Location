@@ -21,6 +21,17 @@
     }
     h1 { font-size: 22px; font-weight: 700; color: #1a1a2e; margin-bottom: 6px; }
     .subtitle { font-size: 14px; color: #888; margin-bottom: 24px; }
+
+    .name-section { margin-bottom: 16px; text-align: left; }
+    .name-section label { font-size: 12px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 7px; }
+    .name-input {
+      width: 100%; padding: 14px 16px; border: 2px solid #e0e0f0;
+      border-radius: 12px; font-size: 15px; font-weight: 500; color: #1a1a2e;
+      outline: none; transition: border-color .2s;
+    }
+    .name-input:focus { border-color: #667eea; }
+    .name-input::placeholder { color: #bbb; font-weight: 400; }
+
     .info-row {
       display: flex; align-items: flex-start; background: #f8f9ff; border-radius: 12px;
       padding: 14px 16px; margin-bottom: 10px; text-align: left; gap: 12px;
@@ -28,19 +39,25 @@
     .info-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
     .info-label { font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
     .info-value { font-size: 13px; font-weight: 500; color: #1a1a2e; margin-top: 3px; word-break: break-all; }
+
     .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; margin-top: 3px; }
     .badge-yellow { background: #fff3cd; color: #856404; }
     .badge-green  { background: #d1fae5; color: #065f46; }
     .badge-red    { background: #fee2e2; color: #991b1b; }
+    .badge-blue   { background: #dbeafe; color: #1e40af; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.2s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
     .btn { width: 100%; padding: 16px; border: none; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 18px; transition: all .2s; }
     .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; box-shadow: 0 8px 20px rgba(102,126,234,.4); }
     .btn-primary:hover:not(:disabled) { transform: translateY(-2px); }
     .btn:disabled { opacity: .55; cursor: not-allowed; }
-    .result-box { margin-top: 16px; padding: 14px 16px; border-radius: 12px; font-size: 13px; font-weight: 500; text-align: left; display: none; line-height: 1.6; white-space: pre-line; }
+
+    .result-box { margin-top: 16px; padding: 16px; border-radius: 12px; font-size: 13px; font-weight: 500; text-align: left; display: none; line-height: 1.7; white-space: pre-line; }
     .result-box.success { background: #d1fae5; color: #065f46; display: block; }
     .result-box.error   { background: #fee2e2; color: #991b1b; display: block; }
+    .result-box.warning { background: #fff3cd; color: #856404; display: block; }
+
     .qr-badge { display: inline-block; margin-bottom: 18px; background: linear-gradient(135deg,#667eea22,#764ba222); border: 1.5px solid #667eea55; border-radius: 10px; padding: 7px 14px; font-size: 13px; font-weight: 700; color: #4c3d8f; }
     .spinner { display: inline-block; width: 15px; height: 15px; border: 2.5px solid #ffffff55; border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 7px; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -55,9 +72,17 @@
 <div class="card">
   <div class="logo">📍</div>
   <h1>QR Attendance Check-In</h1>
-  <p class="subtitle">Your scan is being recorded automatically</p>
+  <p class="subtitle">Fill in your name and submit to log attendance</p>
 
   <div class="qr-badge">🔗 QR ID: <span id="qrIdText">—</span></div>
+
+  <!-- Name Input -->
+  <div class="name-section">
+    <label for="nameInput">👤 Your Full Name *</label>
+    <input type="text" id="nameInput" class="name-input"
+           placeholder="e.g. Ahmed Al Mansoori"
+           autocomplete="name" autocapitalize="words" />
+  </div>
 
   <div class="info-row">
     <span class="info-icon">🕐</span>
@@ -95,19 +120,16 @@
 
 <script>
   // ══════════════════════════════════════════════════════════════
-  //  🔴 STEP 1: Replace this with your Apps Script Web App URL
-  //  How to get it:
-  //    Apps Script editor → Deploy → New Deployment
-  //    → Web App → Execute as: Me → Access: Anyone → Deploy
-  //    → Copy the URL and paste it below
+  //  🔴 Replace with your Google Apps Script Web App URL
   // ══════════════════════════════════════════════════════════════
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzv-bqPdSX7zsO2178ryptdbrmafr3jOuvdeM5QC-XdMyoadkQhREaSU2RkQu1hJbF8Sw/exec";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID_HERE/exec";
   // ══════════════════════════════════════════════════════════════
 
   const params = new URLSearchParams(window.location.search);
   const qrId   = params.get("id") || "NO-ID";
   const now    = new Date();
   let lat = null, lng = null;
+  let gpsReady = false;
 
   document.getElementById("qrIdText").textContent = qrId;
   document.getElementById("tsVal").textContent =
@@ -115,6 +137,7 @@
   document.getElementById("devVal").textContent =
     navigator.userAgent.substring(0, 80) + "…";
 
+  // GPS
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       pos => {
@@ -122,13 +145,13 @@
         lng = pos.coords.longitude.toFixed(6);
         document.getElementById("locVal").innerHTML =
           `<span class="badge badge-green">✅ ${lat}, ${lng}</span>`;
-        readyToSubmit();
+        gpsReady = true; tryEnableSubmit();
       },
       err => {
         lat = "DENIED"; lng = "DENIED";
         document.getElementById("locVal").innerHTML =
           `<span class="badge badge-red">⚠️ Denied — logging without GPS</span>`;
-        readyToSubmit();
+        gpsReady = true; tryEnableSubmit();
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
@@ -136,22 +159,30 @@
     lat = "N/A"; lng = "N/A";
     document.getElementById("locVal").innerHTML =
       `<span class="badge badge-red">⚠️ GPS not supported</span>`;
-    readyToSubmit();
+    gpsReady = true; tryEnableSubmit();
   }
 
-  function readyToSubmit() {
+  // Enable button only when GPS is done
+  function tryEnableSubmit() {
+    if (!gpsReady) return;
     const btn = document.getElementById("submitBtn");
     btn.disabled = false;
     btn.textContent = "✅ Submit Attendance";
   }
 
-  // Uses hidden iframe + HTML form — this is the MOST RELIABLE way
-  // to POST data to Google Apps Script from a browser. It fully
-  // bypasses CORS since the browser handles the form natively.
   function submitAttendance() {
+    const name = document.getElementById("nameInput").value.trim();
+    if (!name) {
+      document.getElementById("nameInput").focus();
+      document.getElementById("nameInput").style.borderColor = "#ef4444";
+      showResult("error", "❌ Please enter your full name before submitting.");
+      return;
+    }
+    document.getElementById("nameInput").style.borderColor = "#e0e0f0";
+
     const btn = document.getElementById("submitBtn");
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Logging to Google Sheets…';
+    btn.innerHTML = '<span class="spinner"></span>Checking & logging…';
 
     const form = document.createElement("form");
     form.method  = "POST";
@@ -161,6 +192,7 @@
 
     const fields = {
       qrId:      qrId,
+      name:      name,
       timestamp: now.toISOString(),
       lat:       lat,
       lng:       lng,
@@ -177,13 +209,54 @@
     form.submit();
     document.body.removeChild(form);
 
-    // Confirm after 3 seconds (Apps Script is usually fast)
+    // Wait for iframe response (Apps Script replies with JSON)
+    let responded = false;
+
+    document.getElementById("hiddenFrame").onload = function() {
+      if (responded) return;
+      responded = true;
+      try {
+        const raw  = this.contentDocument.body.innerText;
+        const data = JSON.parse(raw);
+
+        if (data.status === "duplicate") {
+          btn.disabled = false;
+          btn.textContent = "✅ Submit Attendance";
+          showResult("warning",
+            `⚠️ Duplicate scan blocked!\n\n` +
+            `👤 ${name} already checked in at this location within the last hour.\n\n` +
+            `🕐 Previous scan: ${data.lastScan}\n` +
+            `⏳ You can scan again after: ${data.nextAllowed}`
+          );
+        } else if (data.status === "ok") {
+          btn.textContent = "✅ Logged!";
+          showResult("success",
+            `✅ Attendance logged!\n\n` +
+            `👤 Name: ${name}\n` +
+            `📌 QR ID: ${qrId}\n` +
+            `🕐 Time: ${now.toLocaleString()}\n` +
+            `📍 Location: ${lat === "DENIED" || lat === "N/A" ? "Not available" : lat + ", " + lng}`
+          );
+        } else {
+          throw new Error(data.message || "Unknown error");
+        }
+      } catch(e) {
+        // If we can't read the iframe (cross-origin redirect), fall back to success
+        if (!responded) fallbackSuccess(name, btn);
+      }
+    };
+
+    // Fallback if iframe load event doesn't fire within 5s
     setTimeout(() => {
-      btn.textContent = "✅ Logged!";
-      showResult("success",
-        `✅ Attendance submitted!\n\n📌 QR ID: ${qrId}\n🕐 Time: ${now.toLocaleString()}\n📍 Location: ${lat === "DENIED" || lat === "N/A" ? "Not available" : lat + ", " + lng}\n\n👉 Check your Google Sheet for the new row.`
-      );
-    }, 3000);
+      if (!responded) { responded = true; fallbackSuccess(name, btn); }
+    }, 5000);
+  }
+
+  function fallbackSuccess(name, btn) {
+    btn.textContent = "✅ Logged!";
+    showResult("success",
+      `✅ Attendance submitted!\n\n👤 Name: ${name}\n📌 QR ID: ${qrId}\n🕐 Time: ${now.toLocaleString()}\n📍 ${lat === "DENIED" || lat === "N/A" ? "No GPS" : lat + ", " + lng}`
+    );
   }
 
   function showResult(type, msg) {
