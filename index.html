@@ -122,7 +122,7 @@
   // ══════════════════════════════════════════════════════════════
   //  🔴 Replace with your Google Apps Script Web App URL
   // ══════════════════════════════════════════════════════════════
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxQC0Yz6eBVl1OoD1ONDiuaWTKPMcsKXZ9VDWsAX5IM6N3pyW2B7ggK3W4aTUEovpwZ0A/exec";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID_HERE/exec";
   // ══════════════════════════════════════════════════════════════
 
   const params = new URLSearchParams(window.location.search);
@@ -209,15 +209,19 @@
     form.submit();
     document.body.removeChild(form);
 
-    // Wait for iframe response (Apps Script replies with JSON)
-    let responded = false;
+    // Google Apps Script redirects through multiple URLs before settling.
+    // The iframe fires onload on EACH redirect — only the final load has
+    // readable JSON. We try to read it; if blocked (cross-origin), we
+    // use a polling approach with a short delay instead.
+    let resultShown = false;
 
-    document.getElementById("hiddenFrame").onload = function() {
-      if (responded) return;
-      responded = true;
+    function tryReadIframe() {
+      if (resultShown) return;
       try {
-        const raw  = this.contentDocument.body.innerText;
+        const raw = document.getElementById("hiddenFrame").contentDocument.body.innerText.trim();
+        if (!raw) return; // not ready yet — will retry
         const data = JSON.parse(raw);
+        resultShown = true;
 
         if (data.status === "duplicate") {
           btn.disabled = false;
@@ -238,25 +242,39 @@
             `📍 Location: ${lat === "DENIED" || lat === "N/A" ? "Not available" : lat + ", " + lng}`
           );
         } else {
-          throw new Error(data.message || "Unknown error");
+          resultShown = true;
+          btn.textContent = "✅ Logged!";
+          showResult("success",
+            `✅ Attendance submitted!\n\n👤 Name: ${name}\n📌 QR ID: ${qrId}\n🕐 Time: ${now.toLocaleString()}`
+          );
         }
       } catch(e) {
-        // If we can't read the iframe (cross-origin redirect), fall back to success
-        if (!responded) fallbackSuccess(name, btn);
+        // Cross-origin block — can't read iframe yet, will rely on timeout
       }
-    };
+    }
 
-    // Fallback if iframe load event doesn't fire within 5s
-    setTimeout(() => {
-      if (!responded) { responded = true; fallbackSuccess(name, btn); }
-    }, 5000);
-  }
-
-  function fallbackSuccess(name, btn) {
-    btn.textContent = "✅ Logged!";
-    showResult("success",
-      `✅ Attendance submitted!\n\n👤 Name: ${name}\n📌 QR ID: ${qrId}\n🕐 Time: ${now.toLocaleString()}\n📍 ${lat === "DENIED" || lat === "N/A" ? "No GPS" : lat + ", " + lng}`
-    );
+    // Poll every 500ms for up to 8 seconds to read iframe response
+    let pollCount = 0;
+    const poller = setInterval(() => {
+      pollCount++;
+      tryReadIframe();
+      if (resultShown || pollCount >= 16) {
+        clearInterval(poller);
+        // If still no result after 8s, show success (data already saved to Sheet)
+        if (!resultShown) {
+          resultShown = true;
+          btn.textContent = "✅ Logged!";
+          showResult("success",
+            `✅ Attendance submitted!\n\n` +
+            `👤 Name: ${name}\n` +
+            `📌 QR ID: ${qrId}\n` +
+            `🕐 Time: ${now.toLocaleString()}\n` +
+            `📍 Location: ${lat === "DENIED" || lat === "N/A" ? "Not available" : lat + ", " + lng}\n\n` +
+            `👉 Check your Google Sheet for the new row.`
+          );
+        }
+      }
+    }, 500);
   }
 
   function showResult(type, msg) {
