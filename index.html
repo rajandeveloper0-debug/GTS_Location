@@ -137,28 +137,70 @@
   document.getElementById("devVal").textContent =
     navigator.userAgent.substring(0, 80) + "…";
 
-  // GPS
+  // GPS — uses watchPosition to wait for an accurate fix (≤50m)
+  // then immediately stops watching. This avoids the first rough
+  // cell-tower/WiFi reading that can be 1–20km off.
+  const ACCURACY_THRESHOLD = 50; // metres — adjust if needed
+  const GPS_TIMEOUT_MS = 20000;  // max wait: 20 seconds
+
   if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        lat = pos.coords.latitude.toFixed(6);
-        lng = pos.coords.longitude.toFixed(6);
+    let watchId = null;
+    let gpsTimedOut = false;
+
+    // Show "acquiring" state
+    document.getElementById("locVal").innerHTML =
+      `<span class="badge badge-yellow"><span class="dot"></span> Acquiring GPS fix…</span>`;
+
+    const gpsTimeout = setTimeout(() => {
+      // Timed out — accept whatever we have (or mark as unavailable)
+      gpsTimedOut = true;
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      if (lat === null) {
+        lat = "TIMEOUT"; lng = "TIMEOUT";
         document.getElementById("locVal").innerHTML =
-          `<span class="badge badge-green">✅ ${lat}, ${lng}</span>`;
-        gpsReady = true; tryEnableSubmit();
+          `<span class="badge badge-red">⚠️ GPS timeout — location not captured</span>`;
+      }
+      gpsReady = true; tryEnableSubmit();
+    }, GPS_TIMEOUT_MS);
+
+    watchId = navigator.geolocation.watchPosition(
+      pos => {
+        if (gpsTimedOut) return;
+        const acc = pos.coords.accuracy; // metres
+        const rawLat = pos.coords.latitude.toFixed(6);
+        const rawLng = pos.coords.longitude.toFixed(6);
+
+        // Update display with current reading + accuracy
+        document.getElementById("locVal").innerHTML =
+          `<span class="badge badge-yellow"><span class="dot"></span> ${rawLat}, ${rawLng} (±${Math.round(acc)}m — improving…)</span>`;
+
+        // Accept the fix once accuracy is good enough
+        if (acc <= ACCURACY_THRESHOLD) {
+          clearTimeout(gpsTimeout);
+          navigator.geolocation.clearWatch(watchId);
+          lat = rawLat;
+          lng = rawLng;
+          document.getElementById("locVal").innerHTML =
+            `<span class="badge badge-green">✅ ${lat}, ${lng} (±${Math.round(acc)}m)</span>`;
+          gpsReady = true; tryEnableSubmit();
+        } else {
+          // Keep the best reading so far even if not yet accurate enough
+          lat = rawLat; lng = rawLng;
+        }
       },
       err => {
+        clearTimeout(gpsTimeout);
         lat = "DENIED"; lng = "DENIED";
         document.getElementById("locVal").innerHTML =
-          `<span class="badge badge-red">⚠️ Denied — logging without GPS</span>`;
+          `<span class="badge badge-red">⚠️ Location denied — logging without GPS</span>`;
         gpsReady = true; tryEnableSubmit();
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: GPS_TIMEOUT_MS, maximumAge: 0 }
     );
   } else {
     lat = "N/A"; lng = "N/A";
     document.getElementById("locVal").innerHTML =
-      `<span class="badge badge-red">⚠️ GPS not supported</span>`;
+      `<span class="badge badge-red">⚠️ GPS not supported on this device</span>`;
     gpsReady = true; tryEnableSubmit();
   }
 
