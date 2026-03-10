@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://script.google.com; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>QR Attendance Logger</title>
   <style>
@@ -76,12 +77,19 @@
 
   <div class="qr-badge">🔗 QR ID: <span id="qrIdText">—</span></div>
 
+  <div id="tokenTimer" style="
+    display: inline-block; margin-bottom: 16px;
+    border: 1.5px solid #065f46; border-radius: 10px;
+    padding: 6px 14px; font-size: 12px; font-weight: 700;
+    color: #065f46; background: #d1fae5;
+  ">⏱️ Loading session…</div>
+
   <!-- Name Input -->
   <div class="name-section">
     <label for="nameInput">👤 Your Full Name *</label>
     <input type="text" id="nameInput" class="name-input"
            placeholder="e.g. Ahmed Al Mansoori"
-           autocomplete="name" autocapitalize="words" />
+           autocomplete="name" autocapitalize="words" maxlength="80" />
   </div>
 
   <div class="info-row">
@@ -122,7 +130,7 @@
   // ══════════════════════════════════════════════════════════════
   //  🔴 Replace with your Google Apps Script Web App URL
   // ══════════════════════════════════════════════════════════════
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzf5KzOePgf3OvsdacbyPQlZFOlpTygO6hVT-r7LsnzG-wuTTuwNiOfo5Nuv2N65v3RCQ/exec";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwDTP_PWukQ54ySIUv7Wy3JHJcuvQ4UJGzzIcDdHTqf40dmThg2kcsRA6EcZc-o06hQkA/exec";
   // ══════════════════════════════════════════════════════════════
 
   const params = new URLSearchParams(window.location.search);
@@ -130,6 +138,9 @@
   const now    = new Date();
   let lat = null, lng = null;
   let gpsReady = false;
+  let sessionToken = null;       // issued by server on page load
+  let tokenExpiresAt = null;     // Date object
+  let tokenTimerInterval = null; // countdown timer
 
   document.getElementById("qrIdText").textContent = qrId;
   document.getElementById("tsVal").textContent =
@@ -137,28 +148,93 @@
   document.getElementById("devVal").textContent =
     navigator.userAgent.substring(0, 80) + "…";
 
+  // ── Fetch session token immediately on page load ──────────
+  fetchSessionToken();
+
+  function fetchSessionToken() {
+    fetch(APPS_SCRIPT_URL + "?action=token&qrId=" + encodeURIComponent(qrId))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.status === "ok") {
+          sessionToken    = data.token;
+          tokenExpiresAt  = new Date(data.expiresAt);
+          startTokenTimer();
+        } else {
+          showSessionExpired("❌ Invalid QR code. Please scan a valid QR code.");
+        }
+      })
+      .catch(function() {
+        showSessionExpired("❌ Could not connect to server. Please check your connection.");
+      });
+  }
+
+  function startTokenTimer() {
+    const timerEl = document.getElementById("tokenTimer");
+    if (tokenTimerInterval) clearInterval(tokenTimerInterval);
+
+    tokenTimerInterval = setInterval(function() {
+      const remaining = Math.max(0, tokenExpiresAt - new Date());
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+
+      if (remaining <= 0) {
+        clearInterval(tokenTimerInterval);
+        sessionToken = null;
+        showSessionExpired("⏱️ Session expired. Please scan the QR code again to check in.");
+        return;
+      }
+
+      // Change colour as time runs low
+      const colour = remaining < 60000 ? "#ef4444" : remaining < 180000 ? "#f59e0b" : "#065f46";
+      timerEl.style.color = colour;
+      timerEl.style.borderColor = colour;
+      timerEl.textContent = "⏱️ Session expires in " + mins + ":" + (secs < 10 ? "0" : "") + secs;
+    }, 1000);
+  }
+
+  function showSessionExpired(msg) {
+    // Disable submit button and show expired message
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
+    btn.textContent = "🔒 Session Expired";
+    btn.style.background = "#9ca3af";
+    btn.style.boxShadow  = "none";
+    showResult("error", msg);
+    // Hide timer
+    document.getElementById("tokenTimer").style.display = "none";
+  }
+
   // GPS — fast single reading
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       pos => {
         lat = pos.coords.latitude.toFixed(6);
         lng = pos.coords.longitude.toFixed(6);
-        document.getElementById("locVal").innerHTML =
-          `<span class="badge badge-green">✅ ${lat}, ${lng}</span>`;
+        const b1 = document.createElement("span");
+        b1.className = "badge badge-green";
+        b1.textContent = "✅ " + lat + ", " + lng;
+        const lv = document.getElementById("locVal");
+        lv.innerHTML = ""; lv.appendChild(b1);
         gpsReady = true; tryEnableSubmit();
       },
       err => {
         lat = "DENIED"; lng = "DENIED";
-        document.getElementById("locVal").innerHTML =
-          `<span class="badge badge-red">⚠️ Denied — logging without GPS</span>`;
+        const b2 = document.createElement("span");
+        b2.className = "badge badge-red";
+        b2.textContent = "⚠️ Denied — logging without GPS";
+        const lv2 = document.getElementById("locVal");
+        lv2.innerHTML = ""; lv2.appendChild(b2);
         gpsReady = true; tryEnableSubmit();
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   } else {
     lat = "N/A"; lng = "N/A";
-    document.getElementById("locVal").innerHTML =
-      `<span class="badge badge-red">⚠️ GPS not supported</span>`;
+    const b3 = document.createElement("span");
+    b3.className = "badge badge-red";
+    b3.textContent = "⚠️ GPS not supported";
+    const lv3 = document.getElementById("locVal");
+    lv3.innerHTML = ""; lv3.appendChild(b3);
     gpsReady = true; tryEnableSubmit();
   }
 
@@ -178,13 +254,25 @@
       showResult("error", "❌ Please enter your full name before submitting.");
       return;
     }
-    document.getElementById("nameInput").style.borderColor = "#e0e0f0";
 
+    // Block if token missing/expired
+    if (!sessionToken) {
+      showSessionExpired("⏱️ Session expired. Please scan the QR code again.");
+      return;
+    }
+
+    // Block submission if GPS was denied — required for fence check
+    if (lat === "DENIED" || lat === "N/A" || lat === null) {
+      showResult("error", "❌ Location access is required to check in.\nPlease enable GPS and reload the page.");
+      return;
+    }
+
+    document.getElementById("nameInput").style.borderColor = "#e0e0f0";
     const btn = document.getElementById("submitBtn");
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Checking for duplicate…';
+    btn.innerHTML = '<span class="spinner"></span>Checking…';
 
-    // ── Step 1: Check duplicate FIRST via GET (readable, no CORS issue) ──
+    // Step 1: Duplicate pre-check via GET
     const checkURL = APPS_SCRIPT_URL
       + "?action=check"
       + "&name=" + encodeURIComponent(name)
@@ -193,36 +281,39 @@
     fetch(checkURL)
       .then(function(r) { return r.json(); })
       .then(function(data) {
-
         if (data.status === "duplicate") {
-          // Block the submission — show warning
           btn.disabled = false;
           btn.textContent = "✅ Submit Attendance";
           showResult("warning",
             "⚠️ Duplicate scan blocked!\n\n" +
-            "👤 " + name + " already checked in at this location within the last hour.\n\n" +
+            "👤 " + name + " already checked in here within the last hour.\n\n" +
             "🕐 Previous scan: " + data.lastScan + "\n" +
             "⏳ Try again after: " + data.nextAllowed
           );
           return;
         }
 
-        // ── Step 2: Not a duplicate — submit the form ──
-        btn.innerHTML = '<span class="spinner"></span>Logging to Google Sheets…';
+        // Step 2: Submit — GPS fence is checked server-side inside doPost
+        btn.innerHTML = '<span class="spinner"></span>Verifying location & logging…';
 
         const form = document.createElement("form");
-        form.method  = "POST";
-        form.action  = APPS_SCRIPT_URL;
-        form.target  = "hiddenFrame";
-        form.style.display = "none";
+        form.method = "POST"; form.action = APPS_SCRIPT_URL;
+        form.target = "hiddenFrame"; form.style.display = "none";
+
+        // Check token still valid before submitting
+        if (!sessionToken) {
+          btn.disabled = false;
+          btn.textContent = "✅ Submit Attendance";
+          showSessionExpired("⏱️ Session expired. Please scan the QR code again.");
+          return;
+        }
 
         const fields = {
-          qrId:      qrId,
-          name:      name,
+          qrId: qrId, name: name,
           timestamp: now.toISOString(),
-          lat:       lat,
-          lng:       lng,
-          device:    navigator.userAgent
+          lat: lat, lng: lng,
+          device: navigator.userAgent,
+          token: sessionToken
         };
 
         Object.entries(fields).forEach(function(entry) {
@@ -235,47 +326,60 @@
         form.submit();
         document.body.removeChild(form);
 
-        // Confirm after 2s (form is cross-origin, response unreadable)
+        // Wait for Apps Script to process, then verify result via GET
         setTimeout(function() {
-          btn.textContent = "✅ Logged!";
-          showResult("success",
-            "✅ Attendance logged successfully!\n\n" +
-            "👤 Name: " + name + "\n" +
-            "📌 QR ID: " + qrId + "\n" +
-            "🕐 Time: " + now.toLocaleString() + "\n" +
-            "📍 Location: " + (lat === "DENIED" || lat === "N/A" ? "Not available" : lat + ", " + lng)
-          );
-        }, 2000);
-
+          // Verify by checking if a new entry was logged (duplicate check flips to true)
+          fetch(APPS_SCRIPT_URL + "?action=check&name=" + encodeURIComponent(name) + "&qrId=" + encodeURIComponent(qrId))
+            .then(function(r) { return r.json(); })
+            .then(function(verify) {
+              if (verify.status === "duplicate") {
+                // Entry was written — confirmed success
+                btn.textContent = "✅ Logged!";
+                showResult("success",
+                  "✅ Attendance logged successfully!\n\n" +
+                  "👤 Name: " + name + "\n" +
+                  "📌 QR ID: " + qrId + "\n" +
+                  "🕐 Time: " + now.toLocaleString() + "\n" +
+                  "📍 Location: " + lat + ", " + lng
+                );
+              } else if (verify.status === "token_error") {
+                showSessionExpired("🔒 " + (verify.message || "Session invalid. Please scan the QR code again."));
+              } else if (verify.status === "fence") {
+                btn.disabled = false;
+                btn.textContent = "✅ Submit Attendance";
+                showResult("error",
+                  "❌ Location check failed!\n\n" +
+                  "📍 You are " + (verify.distance || "?") + "m away from this location.\n" +
+                  "✅ Must be within 50m to check in.\n\n" +
+                  "Make sure you are physically at the location."
+                );
+              } else {
+                btn.disabled = false;
+                btn.textContent = "✅ Submit Attendance";
+                showResult("error",
+                  "❌ Check-in rejected.\n\n" +
+                  "📍 Your GPS does not match this location.\n" +
+                  "You must be physically present to check in."
+                );
+              }
+            })
+            .catch(function() {
+              // Can't verify — show optimistic success
+              btn.textContent = "✅ Logged!";
+              showResult("success",
+                "✅ Attendance submitted!\n\n" +
+                "👤 Name: " + name + "\n" +
+                "📌 QR ID: " + qrId + "\n" +
+                "🕐 Time: " + now.toLocaleString() + "\n" +
+                "📍 Location: " + lat + ", " + lng
+              );
+            });
+        }, 3000);
       })
       .catch(function(err) {
-        // If duplicate check fails (network issue), allow submission anyway
-        console.warn("Duplicate check failed:", err);
-        btn.innerHTML = '<span class="spinner"></span>Logging…';
-
-        const form = document.createElement("form");
-        form.method = "POST"; form.action = APPS_SCRIPT_URL;
-        form.target = "hiddenFrame"; form.style.display = "none";
-        ["qrId","name","timestamp","lat","lng","device"].forEach(function(k) {
-          const vals = { qrId: qrId, name: name, timestamp: now.toISOString(), lat: lat, lng: lng, device: navigator.userAgent };
-          const i = document.createElement("input");
-          i.type = "hidden"; i.name = k; i.value = vals[k];
-          form.appendChild(i);
-        });
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
-
-        setTimeout(function() {
-          btn.textContent = "✅ Logged!";
-          showResult("success",
-            "✅ Attendance logged successfully!\n\n" +
-            "👤 Name: " + name + "\n" +
-            "📌 QR ID: " + qrId + "\n" +
-            "🕐 Time: " + now.toLocaleString() + "\n" +
-            "📍 Location: " + (lat === "DENIED" || lat === "N/A" ? "Not available" : lat + ", " + lng)
-          );
-        }, 2000);
+        btn.disabled = false;
+        btn.textContent = "✅ Submit Attendance";
+        showResult("error", "❌ Network error. Please check your connection and try again.");
       });
   }
 
