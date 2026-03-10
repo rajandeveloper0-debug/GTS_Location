@@ -152,15 +152,20 @@
   fetchSessionToken();
 
   function fetchSessionToken() {
-    fetch(APPS_SCRIPT_URL + "?action=token&qrId=" + encodeURIComponent(qrId))
+    // Use POST — GET parameters get stripped by Google's redirect
+    const fd = new FormData();
+    fd.append("action", "token");
+    fd.append("qrId",   qrId);
+
+    fetch(APPS_SCRIPT_URL, { method: "POST", body: fd })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (data.status === "ok") {
-          sessionToken    = data.token;
-          tokenExpiresAt  = new Date(data.expiresAt);
+          sessionToken   = data.token;
+          tokenExpiresAt = new Date(data.expiresAt);
           startTokenTimer();
         } else {
-          showSessionExpired("❌ Invalid QR code. Please scan a valid QR code.");
+          showSessionExpired("❌ " + (data.message || "Invalid QR code. Please scan a valid QR code."));
         }
       })
       .catch(function() {
@@ -272,13 +277,13 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>Checking…';
 
-    // Step 1: Duplicate pre-check via GET
-    const checkURL = APPS_SCRIPT_URL
-      + "?action=check"
-      + "&name=" + encodeURIComponent(name)
-      + "&qrId=" + encodeURIComponent(qrId);
+    // Step 1: Duplicate pre-check via POST
+    const checkFd = new FormData();
+    checkFd.append("action", "check");
+    checkFd.append("name",   name);
+    checkFd.append("qrId",   qrId);
 
-    fetch(checkURL)
+    fetch(APPS_SCRIPT_URL, { method: "POST", body: checkFd })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (data.status === "duplicate") {
@@ -326,10 +331,14 @@
         form.submit();
         document.body.removeChild(form);
 
-        // Wait for Apps Script to process, then verify result via GET
+        // Wait for Apps Script to process, then verify via POST
         setTimeout(function() {
-          // Verify by checking if a new entry was logged (duplicate check flips to true)
-          fetch(APPS_SCRIPT_URL + "?action=check&name=" + encodeURIComponent(name) + "&qrId=" + encodeURIComponent(qrId))
+          const verifyFd = new FormData();
+          verifyFd.append("action", "check");
+          verifyFd.append("name",   name);
+          verifyFd.append("qrId",   qrId);
+
+          fetch(APPS_SCRIPT_URL, { method: "POST", body: verifyFd })
             .then(function(r) { return r.json(); })
             .then(function(verify) {
               if (verify.status === "duplicate") {
